@@ -70,7 +70,7 @@ for f in file_list:
 
 	r, c = np.mgrid[0:binary.shape[0], 0:binary.shape[1]]
 	# coordinates of origin
-	O = [[84.67364503372877, 91.11211909746453]]
+	O = [[center_of_mass[1], center_of_mass[0]]]
 	# 2D array of pixel coordinates
 	D = np.vstack((r.ravel(), c.ravel())).T
 
