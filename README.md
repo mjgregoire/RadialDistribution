@@ -12,3 +12,5 @@ The script can be run by placing it as a .py file in the folder with your images
 
 The script will output to the command line as well as save a csv file including the image names, their size, the central position of the ROI, the max avg intensity value as well as it's corresponding distance, and the ratio of that distance to the total distance. 
 It will also output a heatmap image with the centroid position mapped and the radial distribution plot as an interactive .html file.
+
+If this helps you, or you have any suggestions, I would love to know! And if you use it, it would be equally as awesome if you could reference me! :)
