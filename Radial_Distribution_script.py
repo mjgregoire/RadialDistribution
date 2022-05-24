@@ -28,6 +28,7 @@ import skimage
 from skimage import data
 from skimage import io
 from skimage.filters import threshold_mean
+from skimage import measure
 from skimage import filters
 from skimage.measure import regionprops
 from scipy.spatial import distance
@@ -68,12 +69,28 @@ for f in file_list:
 	#print(y_cent)
 	# Note the inverted coordinates because plt uses (x, y) while NumPy uses (row, column)
 
-#plot the center of mass on the binary
+	#plot the center of mass on the binary
 	#fig, ax = plt.subplots()
 	#ax.imshow(binary, cmap=plt.cm.gray)
 	# Note the inverted coordinates because plt uses (x, y) while NumPy uses (row, column)
 	#ax.scatter(center_of_mass[1], center_of_mass[0], s=160, c='C0', marker='+')
 	#plt.savefig(file_name +'centerMass.png')
+
+	
+#find the area from the binary and get the radius of the cell if it was a perfect circle
+	properties = measure.regionprops(labeled_foreground)
+	area = [prop.area for prop in properties]
+	#print(area)
+	area = np.array(area)
+	print("The area of the cell is:", area)
+	df4 = pd.DataFrame([area], columns=["Area"])
+	df4.to_csv('df4.csv', mode='a+')
+	#[prop.perimeter for prop in properties] 
+	pi = 3.14
+	radius = float(math.sqrt(area / pi))
+	print("The radius is:", radius)
+	df5 = pd.DataFrame([radius], columns=["Radius"])
+	df5.to_csv('df5.csv', mode='a+')
 
 #set the values outside of the threshold a value of 0
 	super_threshold_indices = images < thresh
@@ -111,24 +128,28 @@ for f in file_list:
 	plt.ylabel('Averaged pixel value')
 	plt.savefig(file_name +'radialDistribution.png')
 
-	#find max y and corresponding x at that index
+#find max y and corresponding x at that index
 	max_y = max(projection) 
 	print("Max AVG pixel value is:", max_y)
 	x_index = projection.argmax()
 	print("Corresponding distance (cityblock, pixels) from origin is:", x_index)
-	df4 = pd.DataFrame([max_y], columns=["Max AVG Pixel Value"])
-	df5 = pd.DataFrame([x_index], columns=["Max AVG Pixel Value Corresponding Distance (cityblock)"])
-	df4.to_csv('df4.csv', mode='a+')
-	df5.to_csv('df5.csv', mode='a+')
-	
-	#find the total distance from the origin and the ratio of the peak to total distance
-	total_dist = (len(dst_u))
-	df6 = pd.DataFrame([total_dist], columns=["Total Distance from Origin"])
+	df6 = pd.DataFrame([max_y], columns=["Max AVG Pixel Value"])
+	df7 = pd.DataFrame([x_index], columns=["Max AVG Pixel Value Corresponding Distance (cityblock)"])
 	df6.to_csv('df6.csv', mode='a+')
-	ratio = x_index/total_dist
-	print("The ratio of the distance of the peak to the total distance is:", ratio)
-	df7 = pd.DataFrame([ratio], columns=["Ratio peak dist/total distance"])
 	df7.to_csv('df7.csv', mode='a+')
+	
+#find the ratio of the peak to radius
+	total_dist = (len(dst_u))
+	df8 = pd.DataFrame([total_dist], columns=["Total Distance from Origin"])
+	df8.to_csv('df8.csv', mode='a+')
+	ratio_dist = x_index/total_dist
+	print("The ratio of the distance of the peak divided by the total distance is:", ratio_dist)
+	df9 = pd.DataFrame([ratio_dist], columns=["Ratio peak dist/total distance"])
+	df9.to_csv('df9.csv', mode='a+')
+	ratio = x_index/radius
+	print("The ratio of the distance of the peak divided by the radius is:", ratio)
+	df10 = pd.DataFrame([ratio], columns=["Ratio peak dist/radius"])
+	df10.to_csv('df10.csv', mode='a+')
 
 
 # Merge dfs
@@ -139,7 +160,10 @@ df_4 = pd.read_csv('df4.csv')
 df_5 = pd.read_csv('df5.csv')
 df_6 = pd.read_csv('df6.csv')
 df_7 = pd.read_csv('df7.csv')
-data = pd.concat([df_1, df_2, df_3, df_4, df_5, df_6, df_7], axis=1, join="outer")
+df_8 = pd.read_csv('df8.csv')
+df_9 = pd.read_csv('df9.csv')
+df_10 = pd.read_csv('df10.csv')
+data = pd.concat([df_1, df_2, df_3, df_4, df_5, df_6, df_7, df_8, df_9, df_10], axis=1, join="outer")
 data = data.drop_duplicates()
 data = data.drop(labels = 1, axis = 0)
 data = data.drop(data.filter(regex='Unnamed').columns, axis=1)
@@ -152,4 +176,7 @@ os.remove('df4.csv')
 os.remove('df5.csv')
 os.remove('df6.csv')
 os.remove('df7.csv')
+os.remove('df8.csv')
+os.remove('df9.csv')
+os.remove('df10.csv')
 print("data saved")
