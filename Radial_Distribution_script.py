@@ -10,11 +10,10 @@ Created May 2022
 #there is a macro to do that on imageJ
 
 
-#import modules
+## IMPORT MODULES
 import os
 import shutil
 from pathlib import Path
-
 
 import plotly.express as px
 import plotly.graph_objects as go
@@ -33,10 +32,12 @@ from skimage import filters
 from skimage.measure import regionprops
 from scipy.spatial import distance
 
+## GET THE LIST OF FILES FROM THE FOLDER
+
 file_list = [f for f in os.listdir('.') if (os.path.isfile(f) and f.split('.')[-1] != 'py')]
 print(file_list)
 
-#load the images
+## LOAD THE IMAGES AND START THE FOR LOOP FOR THE SCRIPT
 for f in file_list:
 	file_name = os.path.splitext(f)[0]
 	print(file_name)
@@ -50,12 +51,12 @@ for f in file_list:
 	df2 = pd.DataFrame([images.shape], columns=['image length', 'image width'])
 	df2.to_csv('df2.csv', mode='a+')
 
-#determine the threshold automatically
+## DETERMINE IMAGE THRESHOLD AUTOMATICALLY
 	thresh = skimage.filters.thresholding.threshold_mean(images)
 	binary = images > thresh #> used because imaged cells are lighter than background
 	print("Image thresholded")
 
-#get the center of mass
+## GET THE CENTER OF MASS FOR THE IMAGES
 	labeled_foreground = (images > thresh).astype(int)
 	properties = regionprops(labeled_foreground, images)
 	center_of_mass = properties[0].centroid
@@ -69,7 +70,7 @@ for f in file_list:
 	#print(y_cent)
 	# Note the inverted coordinates because plt uses (x, y) while NumPy uses (row, column)
 
-	#plot the center of mass on the binary
+	## PLOT THE CENTER OF MASS ON THE BINARY
 	#fig, ax = plt.subplots()
 	#ax.imshow(binary, cmap=plt.cm.gray)
 	# Note the inverted coordinates because plt uses (x, y) while NumPy uses (row, column)
@@ -77,7 +78,7 @@ for f in file_list:
 	#plt.savefig(file_name +'centerMass.png')
 
 	
-#find the area from the binary and get the radius of the cell if it was a perfect circle
+## FIND AREA OF BINARY IMAGE AND GET RADIUS AS IF IT WAS PERECT CIRCLE
 	properties = measure.regionprops(labeled_foreground)
 	area = [prop.area for prop in properties]
 	#print(area)
@@ -92,67 +93,99 @@ for f in file_list:
 	df5 = pd.DataFrame([radius], columns=["Radius"])
 	df5.to_csv('df5.csv', mode='a+')
 
-#set the values outside of the threshold a value of 0
+## SET THE VALUES OUTSIDE OF THE THRESHOLDED IMAGE A VALUE OF 0
 	super_threshold_indices = images < thresh
 	images[super_threshold_indices] = 0
 	plt.imshow(images)
 
-# plot the center of mass on the heatmap
+## PLOT THE IMAGE AS A HEATMAP WITH CENTER OF MASS AND MAX PIXEL INTENSITY
+	#plot the center of mass 
 	heatmap = px.imshow(images, color_continuous_scale='turbo')
 	heatmap.add_trace(go.Scatter(x = x_cent, y = y_cent, mode='markers', marker=dict(size = 12, color='white', symbol = 'cross')))
+	#find max pixel intensity and plot it
+	point = np.unravel_index(images.argmax(), images.shape)
+	#print(point)
+	x_point = (point[1],)
+	print("The x coordinate of the max intensity is:", x_point)
+	df6 = pd.DataFrame([x_point], columns=["max x"])
+	df6.to_csv('df6.csv', mode='a+')
+	y_point = (point[0],)
+	print("The y coordinate of the max intensity is:", y_point)
+	df7 = pd.DataFrame([y_point], columns=["max y"])
+	df7.to_csv('df7.csv', mode='a+')
+	heatmap.add_trace(go.Scatter(x = x_point, y = y_point, mode='markers', marker=dict(size = 12, color='white', symbol = 'circle-open',)))
+	#heatmap.show()
 	heatmap.write_html(file_name +'.html')
 
-# calculate the 1D average of the image for each radius from the centroid position "center of mass"
+## CALCULATE THE RADIAL DISTANCES FROM ORIGIN/CENTER
+	# Get image parameters along the x and y and save to variables
+	#print(images.shape)
+	a = images.shape[0]
+	b = images.shape[1]
+	
+	# Find radial distances corresponding to image center
+	#create two grids — one corresponding to x-coordinates and one to y-coordinates
+	[X, Y] = np.meshgrid(np.arange(b) - x_cent, np.arange(a) - y_cent) 
+	#use the x and y values to calculate the radial distance at each point and make a new grid "R"
+	#each point in this grid will have the value corresponding to the radial distance from the center
+	R = np.sqrt(np.square(X) + np.square(Y))
 
-	r, c = np.mgrid[0:images.shape[0], 0:images.shape[1]]
-	# coordinates of origin
-	O = [[84.67364503372877, 91.11211909746453]]
-	# 2D array of pixel coordinates
-	D = np.vstack((r.ravel(), c.ravel())).T
+## INTITIALIZE VARIABLES FOR THE AVERAGING CALCULATION
+	#initialize array for x values 
+	#set the resolution of averaging with array "rad" with radial values that go from 1 pixel (3rd arg) to the maximum radial value in grid
+	rad = np.arange(1, np.max(R), 1)
 
-	metric = 'cityblock' # 'chebychev' #'euclidean'  #or 'cityblock' 
-	# calculate distances
-	dst = distance.cdist(O, D, metric)
-	# group same distances
-	dst_u, indices, total_count  = np.unique(dst, return_inverse=True,
-                                         return_counts=True)
-	# summed intensities for each unique distance
-	f_image = images.flatten()
-	proj_sum = [sum(f_image[indices == ix]) for ix, d in enumerate(dst_u)]
-	# calculatge averaged pixel values
-	projection = np.divide(proj_sum, total_count)
+	#initialize array for y values (intensity)
+	#create an array of zeros with the same length as rad, and an index variable called index, which will be used to keep track of where we are changing the intensity
+	intensity = np.zeros(len(rad))
+	index = 0
 
-	plt.clf()
-	plt.plot(projection)
-	plt.xlabel('Distance[{}] from {}'.format(metric, O[0]))
-	plt.ylabel('Averaged pixel value')
+## CALCULATE RADIAL AVERAGES
+	#use for loop to calculate the average at each radial distance
+	#set bin size (sets how many pixels we include in addition to the exact radial distance we are looking for)
+	#here bin is 1 pixel less than and greater than our radius of interest
+
+	bin_size = 1
+
+	for i in rad:
+    		mask = (np.greater(R, i - bin_size) & np.less(R, i + bin_size))
+    		values = images[mask]
+    		intensity[index] = np.mean(values)
+    		index += 1
+          
+          
+## MAKE PLOT OF AVG PIXEL RADIAL DISTRIBUTION
+	fig = plt.figure()
+	ax = fig.add_subplot(111)
+	ax.plot(rad, intensity, linewidth=2)
+	ax.set_xlabel('Radial Distance', labelpad=10)
+	ax.set_ylabel('Average Intensity', labelpad=10)
+	for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] + ax.get_xticklabels() + ax.get_yticklabels()):
+    		item.set_fontsize(8)
 	plt.savefig(file_name +'radialDistribution.png')
 
-#find max y and corresponding x at that index
-	max_y = max(projection) 
-	print("Max AVG pixel value is:", max_y)
-	x_index = projection.argmax()
-	print("Corresponding distance (cityblock, pixels) from origin is:", x_index)
-	df6 = pd.DataFrame([max_y], columns=["Max AVG Pixel Value"])
-	df7 = pd.DataFrame([x_index], columns=["Max AVG Pixel Value Corresponding Distance (cityblock)"])
-	df6.to_csv('df6.csv', mode='a+')
-	df7.to_csv('df7.csv', mode='a+')
-	
-#find the ratio of the peak to radius
-	total_dist = (len(dst_u))
-	df8 = pd.DataFrame([total_dist], columns=["Total Distance from Origin"])
+	# save the intensity values to plot elsewhere
+	intDF = pd.DataFrame([intensity])
+	intDF.to_csv('intensityData.csv', mode='a+')
+
+## FIND THE MAX AVERAGE RADIAL INTENSITY DISTANCE FROM CENTER 
+	radmax_y = max(intensity)
+	print("Max averaged radial intensity is:", radmax_y)
+	df8 = pd.DataFrame([radmax_y], columns=["Max AVG radial intensity"])
 	df8.to_csv('df8.csv', mode='a+')
-	ratio_dist = x_index/total_dist
-	print("The ratio of the distance of the peak divided by the total distance is:", ratio_dist)
-	df9 = pd.DataFrame([ratio_dist], columns=["Ratio peak dist/total distance"])
+	x_index = intensity.argmax()
+	print("Corresponding radial distance (pixels) from origin is:", x_index)
+	df9 = pd.DataFrame([x_index], columns=["Distance to max AVG radial intensity"])
 	df9.to_csv('df9.csv', mode='a+')
-	ratio = x_index/radius
-	print("The ratio of the distance of the peak divided by the radius is:", ratio)
-	df10 = pd.DataFrame([ratio], columns=["Ratio peak dist/radius"])
+
+	#normalize distance by the radius of the cell
+	norm = x_index/radius
+	print("The normalized distance (by radius) is:", norm)
+	df10 = pd.DataFrame([norm], columns=["Normalized distance to max AVG radial intensity"])
 	df10.to_csv('df10.csv', mode='a+')
 
-
-# Merge dfs
+	
+## MERGE DFs
 df_1 = pd.read_csv('df1.csv')
 df_2 = pd.read_csv('df2.csv')
 df_3 = pd.read_csv('df3.csv')
@@ -168,7 +201,7 @@ data = data.drop_duplicates()
 data = data.drop(labels = 1, axis = 0)
 data = data.drop(data.filter(regex='Unnamed').columns, axis=1)
 print(data)
-data.to_csv('radial_values.csv', mode='a+')
+data.to_csv('radialDistributionData.csv', mode='a+')
 os.remove('df1.csv')
 os.remove('df2.csv')
 os.remove('df3.csv')
